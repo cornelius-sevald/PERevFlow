@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.35.2.
+-- This file has been generated from package.yaml by hpack version 0.36.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -58,7 +58,9 @@ library
       RL.AST
       RL.Impl.Wellformed
       RL.Operators
+      RL.Preprocess
       RL.Program
+      RL.Valueable
       RL.Values
       RL.Variables
       RL.Wellformed
