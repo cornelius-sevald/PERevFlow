@@ -58,8 +58,8 @@ instance Valueable Pattern where
 instance Valueable Expr where
   asValue (Const v) = asValue (Atom "CONST", v)
   asValue (Var n) = asValue (Atom "VAR", Atom n)
-  asValue (Op op e1 e2) = asValue (Atom "OP", op, e1, e2)
-  asValue (UOp op e) = asValue (Atom "UOP", op, e)
+  asValue (Op op e1 e2) = asValue (Atom "BINOP", op, e1, e2)
+  asValue (UOp op e) = asValue (Atom "UNOP", op, e)
 
 instance Valueable Step where
   asValue Skip = Atom "SKIP"

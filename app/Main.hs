@@ -62,9 +62,11 @@ data InvertOptions = InvertOptions
   }
 
 data PreprocessOptions = PreprocessOptions
-  { valInpFile :: String
-  , valOutFile :: String
-  , valVerbose :: Bool
+  { prepFile :: String
+  , prepInputFile :: String
+  , prepOutFile :: String
+  , prepVerbose :: Bool
+  , prepEncode :: Bool
   }
 
 data InterpretOptions = InterpretOptions
@@ -131,10 +133,14 @@ inverterParser = Invert <$> (InvertOptions
 preprocessParser :: Parser Options
 preprocessParser = Preprocess <$> (PreprocessOptions
               <$> argument str (metavar "<Input RL file>")
+              <*> argument str (metavar "<Spec file> (not needed if not encoding)")
               <*> argument str (metavar "<Output path>")
               <*> flag True False (long "verbose"
                            <> short 'v'
                            <> help "Show messages and info for each phase")
+              <*> flag True False (long "encode"
+                           <> short 'e'
+                           <> help "After preprocessing, encoding program to RL value")
               )
 
 interpretParser :: Parser Options
@@ -244,17 +250,30 @@ invMain InvertOptions { invInpFile = inputPath
      writeOutput v outputPath out
 
 prepMain :: PreprocessOptions -> IO ()
-prepMain PreprocessOptions { valInpFile = inputPath
-                          , valOutFile = outputPath
-                          , valVerbose = v} =
-  do prog <- parseFile "program" v parseProg inputPath
+prepMain PreprocessOptions { prepFile = filePath
+                          , prepInputFile = inputPath
+                          , prepOutFile = outputPath
+                          , prepVerbose = v
+                          , prepEncode = enc } =
+  do prog <- parseFile "program" v parseProg filePath
      _ <- fromEM "performing wellformedness check of input prog"
               $ wellformedProg prog
+     spec <- parseFile "division and specilization data" v parseSpec inputPath
      trace v "- Preprocessing program."
-     prepProg <- maybe (die "Error preprocessing program")
-                       pure
-                       (preprocessProgram prog)
-     let out = prettyVal prepProg <> "\n"
+     prepProg@(decl, _) <-
+       maybe (die "Error preprocessing program")
+       pure
+       (preprocessProgram prog)
+     trace (v && enc) "- Encoding program."
+     -- Need to add temporary values from preprocessing to store
+     let varNames = input decl ++ output decl ++ temp decl
+     let nilStore = fromList $ map (\x -> (x, Nil)) varNames
+     let store = combine spec nilStore
+     let encProg = encodeProgram prepProg
+     let encStore = encodeStore store
+     let out = if enc then "prog = '"  <> prettyVal encProg <> "\n" <>
+                           "input = '" <> prettyVal encStore <> "\n"
+                      else prettyProg id prepProg
      writeOutput v outputPath out
 
 optimMain :: OptimizeOptions -> IO ()
