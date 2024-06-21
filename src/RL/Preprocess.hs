@@ -19,9 +19,9 @@ encodeProgram (_, blocks) = asValue $ mapLabel Atom blocks
 preprocessProgram :: (Eq label, Eq store) => Program label store -> Maybe (Program label store)
 preprocessProgram (decl, blocks) = do
   blocks' <- reorderBlocks blocks
-  let prepBlocks = do tmp <- freshName; return $ preprocessBlock tmp <$> blocks'
+  let prepBlocks = mapM preprocessBlock blocks'
       (prepBlocks', tmpVars) = runNameSource decl prepBlocks
-  let decl' = VariableDecl {input = input decl, output = output decl, temp = temp decl ++ tmpVars}
+  let decl' = VariableDecl { input = input decl, output = output decl, temp = temp decl ++ tmpVars }
   return (decl', prepBlocks')
 
 reorderBlocks :: (Eq label, Eq store) => [Block label store] -> Maybe [Block label store]
@@ -35,29 +35,30 @@ reorderBlocks blocks = do
           else [entryBlock] ++ otherBlocks ++ [exitBlock]
   return blocks'
 
-preprocessBlock :: Name -> Block l s -> Block l s
-preprocessBlock tmpName (Block {name = _name, jump = _jump, from = _from, body = _body}) =
-  let _body' = concat $ map (removeReplace tmpName) _body
-   in Block {name = _name, jump = _jump, from = _from, body = _body'}
+preprocessBlock :: Block l s -> NameSource (Block l s)
+preprocessBlock (Block {name = _name, jump = _jump, from = _from, body = _body}) = do
+  _body' <- concat <$> mapM removeReplace _body
+  return $ Block {name = _name, jump = _jump, from = _from, body = _body'}
 
 -- | Replace replace steps with non-replace steps
-removeReplace :: Name -> Step -> [Step]
-removeReplace tmpName (Replacement q1 q2) =
+removeReplace :: Step -> NameSource [Step]
+removeReplace (Replacement q1 q2) = do
+  tmp <- peekName
   -- Step for initializing temporary var
-  let initTmp = Update tmpName Xor (patToExpr q2)
-      -- Steps for clearing variables in q2n q2n q2n q2n q2n q2
-      clearQ2 = map clear $ unfoldPat (Var tmpName) q2
-      -- Steps for assigning variables in q1. q1. q1. q1. q1. q1.
-      assignQ1 = map assign $ unfoldPat (Var tmpName) q1
-      -- Step for clearing temporary var var var var var var
-      clearTmp = Update tmpName Xor (patToExpr q1)
-   in [initTmp] ++ clearQ2 ++ assignQ1 ++ [clearTmp]
+  let initTmp = Update tmp Xor (patToExpr q2)
+  -- Steps for clearing variables in q2
+  let clearQ2 = map clear $ unfoldPat (Var tmp) q2
+  -- Steps for assigning variables in q1.
+  let assignQ1 = map assign $ unfoldPat (Var tmp) q1
+  -- Step for clearing temporary var
+  let clearTmp = Update tmp Xor (patToExpr q1)
+  return $ [initTmp] ++ clearQ2 ++ assignQ1 ++ [clearTmp]
   where
     clear (Left _, _) = Skip
     clear (Right x, e) = Update x Xor e
     assign (Left v, e) = Assert (Op Equal (Const v) e)
     assign (Right x, e) = Update x Xor e
-removeReplace _ s = [s]
+removeReplace s = pure [s]
 
 -- Convert a pattern to an equivalent expression
 patToExpr :: Pattern -> Expr
@@ -97,6 +98,7 @@ runNameSource (VariableDecl {temp = _temp, output = _output, input = _input}) ns
     -- Infinite list of not-already-declared variable names
     fresh = filter (not . flip elem declared) names
 
+-- | Get a new fresh name
 freshName :: NameSource Name
 freshName = do
   (used, source) <- State.get
@@ -104,3 +106,13 @@ freshName = do
   let source' = tail source
   State.put (fresh : used, source')
   return fresh
+
+-- | Peek the last generated name.
+-- If there is none, creates one.
+peekName :: NameSource Name
+peekName = do
+  (used, _) <- State.get
+  peek <- case used of
+            (n : _) -> pure n
+            [] -> freshName
+  return peek
